@@ -11,6 +11,9 @@ interface GameRow {
   id: number;
   session_id: string;
   player_color: 'w' | 'b';
+  player_name: string | null;
+  player_remaining_ms: number | null;
+  player_turn_started_at_ms: number | null;
   fen: string;
   moves: string;
   status: 'active' | 'finished';
@@ -30,6 +33,7 @@ export class GameError extends Error {
 const SQUARE = /^[a-h][1-8]$/;
 const PROMO = new Set(['q', 'r', 'b', 'n']);
 const now = () => new Date().toISOString();
+export const GUEST_TIME_MS = 7 * 60 * 1000;
 
 /** Rebuilds the position from the move list so repetition history is exact. */
 function replay(moves: MoveRecord[]): Chess {
@@ -60,6 +64,8 @@ export class GameService {
     private db: Db,
     private engine: MoveEngine,
     private moveTimeMs: number,
+    private playerColor: 'w' | 'b' = 'b',
+    private nowMs: () => number = Date.now,
   ) {}
 
   // ---------- sessions ----------
@@ -86,6 +92,24 @@ export class GameService {
     return g;
   }
 
+  // Server clock survives refreshes and restarts. Legacy games have NULL clock fields.
+  private remaining(g: GameRow): number | null {
+    if (g.player_remaining_ms === null) return null;
+    if (g.status !== 'active' || g.player_turn_started_at_ms === null) return g.player_remaining_ms;
+    return Math.max(0, g.player_remaining_ms - Math.max(0, this.nowMs() - g.player_turn_started_at_ms));
+  }
+
+  private expireIfNeeded(gameId?: number): void {
+    const deadline = this.nowMs();
+    const where = gameId === undefined ? '' : ' AND id = ?';
+    this.db.prepare(`UPDATE games SET status = 'finished', result = 'ai', reason = 'timeout',
+      updated_at = ?, finished_at = ?, player_remaining_ms = 0, player_turn_started_at_ms = NULL
+      WHERE status = 'active' AND player_turn_started_at_ms IS NOT NULL
+      AND player_remaining_ms IS NOT NULL
+      AND player_remaining_ms <= ? - player_turn_started_at_ms${where}`)
+      .run(new Date(deadline).toISOString(), new Date(deadline).toISOString(), deadline, ...(gameId === undefined ? [] : [gameId]));
+  }
+
   view(g: GameRow): GameView {
     const moves = JSON.parse(g.moves) as MoveRecord[];
     const chess = new Chess(g.fen);
@@ -94,6 +118,9 @@ export class GameService {
     return {
       id: g.id,
       playerColor: g.player_color,
+      playerName: g.player_name ?? 'Гость',
+      playerRemainingMs: this.remaining(g),
+      playerTurnStartedAtMs: g.player_turn_started_at_ms,
       fen: g.fen,
       moves,
       status: g.status,
@@ -115,17 +142,22 @@ export class GameService {
       .prepare("SELECT * FROM games WHERE session_id = ? ORDER BY (status = 'active') DESC, id DESC LIMIT 1")
       .get(sessionId) as GameRow | undefined;
     if (!g) return null;
-    this.kickAi(g);
-    return this.view(g);
+    this.expireIfNeeded(g.id);
+    const fresh = this.row(g.id)!;
+    this.kickAi(fresh);
+    return this.view(fresh);
   }
 
   get(sessionId: string, gameId: number): GameView {
     const g = this.owned(sessionId, gameId);
-    this.kickAi(g);
-    return this.view(g);
+    this.expireIfNeeded(g.id);
+    const fresh = this.row(g.id)!;
+    this.kickAi(fresh);
+    return this.view(fresh);
   }
 
   stats(base: StatsView['ruslanych']): StatsView {
+    this.expireIfNeeded();
     const rows = this.db
       .prepare("SELECT result, COUNT(*) AS n FROM games WHERE status = 'finished' GROUP BY result")
       .all() as { result: GameResult; n: number }[];
@@ -143,18 +175,23 @@ export class GameService {
   // ---------- writes ----------
 
   /** Starts a new game. An unfinished game must be finished (or resigned) first. */
-  newGame(sessionId: string): GameView {
+  newGame(sessionId: string, playerName = 'Гость'): GameView {
     const active = this.db
       .prepare("SELECT * FROM games WHERE session_id = ? AND status = 'active'")
       .get(sessionId) as GameRow | undefined;
     if (active) return this.view(active);
+    const name = playerName.trim();
+    if (name.length < 1 || name.length > 32) throw new GameError(400, 'bad_name', 'Введите имя до 32 символов');
     const t = now();
+    const clockStarted = this.playerColor === 'w' ? this.nowMs() : null;
     const r = this.db
       .prepare(
-        "INSERT INTO games (session_id, player_color, fen, moves, status, created_at, updated_at) VALUES (?, 'w', ?, '[]', 'active', ?, ?)",
+        "INSERT INTO games (session_id, player_color, player_name, player_remaining_ms, player_turn_started_at_ms, fen, moves, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, '[]', 'active', ?, ?)",
       )
-      .run(sessionId, new Chess().fen(), t, t);
-    return this.view(this.row(Number(r.lastInsertRowid))!);
+      .run(sessionId, this.playerColor, name, GUEST_TIME_MS, clockStarted, new Chess().fen(), t, t);
+    const fresh = this.row(Number(r.lastInsertRowid))!;
+    this.kickAi(fresh); // AI plays white and opens the game
+    return this.view(fresh);
   }
 
   /**
@@ -163,7 +200,8 @@ export class GameService {
    */
   async playerMove(sessionId: string, gameId: number, input: MoveInput, ply: number): Promise<GameView> {
     const g = this.owned(sessionId, gameId);
-    if (g.status !== 'active') throw new GameError(409, 'finished', 'Партия уже завершена');
+    this.expireIfNeeded(g.id);
+    if (this.row(g.id)!.status !== 'active') throw new GameError(409, 'finished', 'Партия уже завершена');
     const moves = JSON.parse(g.moves) as MoveRecord[];
     if (ply !== moves.length) throw new GameError(409, 'stale', 'Позиция изменилась, обновите партию');
     const chess = replay(moves);
@@ -207,6 +245,7 @@ export class GameService {
   /** Appends one move with an optimistic check on the move count. Returns false if the game changed meanwhile. */
   private commit(g: GameRow, chess: Chess, moves: MoveRecord[], m: Omit<MoveRecord, 'ply' | 'at'>): boolean {
     const t = now();
+    const remaining = this.remaining(g);
     const next = [...moves, { ...m, ply: moves.length + 1, at: t }];
     const end = endState(chess, g.player_color);
     this.db.exec('BEGIN IMMEDIATE');
@@ -214,7 +253,8 @@ export class GameService {
       const r = this.db
         .prepare(
           `UPDATE games SET fen = ?, moves = ?, updated_at = ?,
-             status = ?, result = ?, reason = ?, finished_at = ?
+             status = ?, result = ?, reason = ?, finished_at = ?,
+             player_remaining_ms = ?, player_turn_started_at_ms = ?
            WHERE id = ? AND status = 'active' AND json_array_length(moves) = ?`,
         )
         .run(
@@ -225,6 +265,8 @@ export class GameService {
           end?.result ?? null,
           end?.reason ?? null,
           end ? t : null,
+          remaining,
+          end || m.by === 'player' || remaining === null ? null : this.nowMs(),
           g.id,
           moves.length,
         );
@@ -241,7 +283,7 @@ export class GameService {
     const t = now();
     this.db
       .prepare(
-        "UPDATE games SET status = 'finished', result = ?, reason = ?, finished_at = ?, updated_at = ? WHERE id = ? AND status = 'active'",
+        "UPDATE games SET status = 'finished', result = ?, reason = ?, finished_at = ?, updated_at = ?, player_turn_started_at_ms = NULL WHERE id = ? AND status = 'active'",
       )
       .run(result, reason, t, t, id);
   }
@@ -262,6 +304,7 @@ export class GameService {
   }
 
   private async computeAiMove(gameId: number): Promise<void> {
+    this.expireIfNeeded(gameId);
     const g = this.row(gameId);
     if (!g || g.status !== 'active') return;
     const moves = JSON.parse(g.moves) as MoveRecord[];

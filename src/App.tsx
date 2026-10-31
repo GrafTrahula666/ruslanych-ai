@@ -15,6 +15,7 @@ const REASONS: Record<string, string> = {
   'fifty-moves': 'правило 50 ходов',
   'insufficient-material': 'недостаточно материала',
   resign: 'сдача',
+  timeout: 'время вышло',
 };
 
 function statusText(g: GameView | null, offline: boolean): string {
@@ -39,6 +40,8 @@ export function App() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [guestName, setGuestName] = useState('');
+  const [clockTick, setClockTick] = useState(Date.now());
   const gameRef = useRef<GameView | null>(null);
   gameRef.current = game;
 
@@ -50,6 +53,8 @@ export function App() {
     (g: GameView | null) => {
       const prev = gameRef.current;
       setGame(g);
+      if (g?.playerName && g.playerName !== 'Гость') setGuestName(g.playerName);
+      setClockTick(Date.now());
       setPending(null);
       setOffline(false);
       if (g && g.status === 'finished' && prev?.id === g.id && prev.status !== 'finished') refreshStats();
@@ -78,8 +83,31 @@ export function App() {
     return () => clearInterval(t);
   }, [waiting, offline, applyGame]);
 
+  useEffect(() => {
+    if (game?.status !== 'active' || game.turn !== 'player' || game.playerTurnStartedAtMs === null) return;
+    const timer = setInterval(() => setClockTick(Date.now()), 250);
+    return () => clearInterval(timer);
+  }, [game?.id, game?.status, game?.turn, game?.playerTurnStartedAtMs]);
+
+  const clockRemaining = game?.playerRemainingMs === null || game?.playerRemainingMs === undefined
+    ? null
+    : Math.max(0, game.playerRemainingMs - (
+        game.status === 'active' && game.turn === 'player' && game.playerTurnStartedAtMs !== null
+          ? Math.max(0, clockTick - game.playerTurnStartedAtMs)
+          : 0
+      ));
+  const clockExpired = !!game && game.status === 'active' && game.turn === 'player' && clockRemaining === 0;
+  useEffect(() => {
+    if (!clockExpired) return;
+    const timer = setInterval(() => {
+      const id = gameRef.current?.id;
+      if (id) api.game(id).then((r) => applyGame(r.game)).catch(() => setOffline(true));
+    }, 1500);
+    return () => clearInterval(timer);
+  }, [clockExpired, applyGame]);
+
   const chess = useMemo(() => new Chess(game?.fen), [game?.fen]);
-  const myTurn = !!game && game.status === 'active' && game.turn === 'player' && !busy && !pending;
+  const myTurn = !!game && game.status === 'active' && game.turn === 'player' && !busy && !pending && !clockExpired;
 
   const send = useCallback(
     async (m: MoveInput) => {
@@ -180,7 +208,7 @@ export function App() {
     setBusy(true);
     setError('');
     try {
-      applyGame((await api.newGame()).game);
+      applyGame((await api.newGame(guestName.trim())).game);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Нет связи с сервером');
     } finally {
@@ -272,18 +300,26 @@ export function App() {
       </section>
 
       <section className="status">
+        {game && <p>Игрок: <strong>{game.playerName}</strong> · Вы играете {game.playerColor === 'b' ? 'чёрными' : 'белыми'}</p>}
+        {clockRemaining !== null && <p className="clock" aria-live="off">Ваше время: <strong>{String(Math.floor(clockRemaining / 60000)).padStart(2, '0')}:{String(Math.floor((clockRemaining % 60000) / 1000)).padStart(2, '0')}</strong></p>}
         <p className="thinking" aria-live="polite">{thinking ? 'ИИ думает…' : ' '}</p>
         <p aria-live="polite">{loaded ? statusText(game, offline) : 'Загрузка…'}</p>
         {error && <p className="error">{error}</p>}
       </section>
 
+      {game?.status !== 'active' && (
+        <label className="guest-name">Ваше имя
+          <input type="text" autoComplete="nickname" maxLength={32} value={guestName}
+            onChange={(e) => setGuestName(e.target.value)} placeholder="Введите имя перед игрой" />
+        </label>
+      )}
       <section className="actions">
         {game?.status === 'active' ? (
           <button onClick={resign} disabled={busy}>
             Сдаться
           </button>
         ) : (
-          <button onClick={startNew} disabled={busy || !loaded}>
+          <button onClick={startNew} disabled={busy || !loaded || guestName.trim().length === 0}>
             {game ? 'Реванш' : 'Новая партия'}
           </button>
         )}

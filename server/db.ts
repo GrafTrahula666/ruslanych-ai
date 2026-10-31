@@ -41,5 +41,10 @@ export function openDb(dataDir: string, file = 'ruslanych.sqlite'): Db {
     -- at most one unfinished game per session
     CREATE UNIQUE INDEX IF NOT EXISTS games_one_active ON games(session_id) WHERE status = 'active';
   `);
+  // Additive migration: existing Railway SQLite rows stay intact.
+  const columns = new Set((db.prepare('PRAGMA table_info(games)').all() as { name: string }[]).map((x) => x.name));
+  if (!columns.has('player_name')) db.exec('ALTER TABLE games ADD COLUMN player_name TEXT');
+  if (!columns.has('player_remaining_ms')) db.exec('ALTER TABLE games ADD COLUMN player_remaining_ms INTEGER');
+  if (!columns.has('player_turn_started_at_ms')) db.exec('ALTER TABLE games ADD COLUMN player_turn_started_at_ms INTEGER');
   return db;
 }

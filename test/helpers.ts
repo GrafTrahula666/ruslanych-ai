@@ -23,7 +23,7 @@ export class ScriptedEngine implements MoveEngine {
 export function setup(file = ':memory:', dir = '') {
   const db = openDb(dir, file);
   const engine = new ScriptedEngine();
-  const games = new GameService(db, engine, 10);
+  const games = new GameService(db, engine, 10, 'w');
   return { db, engine, games };
 }
 
