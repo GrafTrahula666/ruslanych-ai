@@ -36,9 +36,9 @@ export const config = {
   },
   // Fixed showcase stats, not affected by visitor games.
   ruslanychStats: {
-    total: 1089,
-    ruslanych: 567,
-    ai: 522,
+    total: 2438,
+    ruslanych: 1258,
+    ai: 1160,
     ruslanychWinPercent: 52,
   },
 };
