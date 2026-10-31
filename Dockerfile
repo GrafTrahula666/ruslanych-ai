@@ -5,15 +5,17 @@ RUN npm ci
 COPY . .
 RUN npm run typecheck && npm run build && npm prune --omit=dev
 
-# Native Stockfish (latest official release). If the download or the CPU check fails,
-# the server falls back to the bundled Stockfish WASM build.
+# Stockfish 19: pinned official universal Linux binary, verified before use.
 FROM node:22-bookworm-slim AS engine
-ARG SF_URL=https://github.com/official-stockfish/Stockfish/releases/latest/download/stockfish-ubuntu-x86-64-avx2.tar
-RUN mkdir -p /opt/sf && cd /tmp \
- && (node -e "fetch(process.argv[1]).then(r=>{if(!r.ok)throw new Error(r.status);return r.arrayBuffer()}).then(b=>require('fs').writeFileSync('sf.tar',Buffer.from(b)))" "$SF_URL" \
-     && tar xf sf.tar && find . -type f -name 'stockfish-ubuntu-x86-64-avx2' -exec cp {} /opt/sf/stockfish \; \
-     && echo quit | /opt/sf/stockfish | head -1 && echo "native stockfish ready") \
- || (rm -f /opt/sf/stockfish; echo "native stockfish unavailable, WASM will be used")
+ARG SF_URL=https://github.com/official-stockfish/Stockfish/releases/download/sf_19/stockfish-linux-x86-64-universal.tar.gz
+ARG SF_SHA256=9defc0d4e55d49c65a6d042f3e571a39fcea499ade6dbe741b53b8c65e03611f
+RUN mkdir -p /opt/sf /tmp/sf && cd /tmp \
+ && node -e "fetch(process.argv[1]).then(r=>{if(!r.ok)throw new Error(r.status);return r.arrayBuffer()}).then(b=>require('fs').writeFileSync('sf.tar.gz',Buffer.from(b)))" "$SF_URL" \
+ && echo "$SF_SHA256  sf.tar.gz" | sha256sum -c - \
+ && tar xzf sf.tar.gz -C /tmp/sf \
+ && find /tmp/sf -type f -name 'stockfish*' -perm /111 -exec cp {} /opt/sf/stockfish \; \
+ && test -x /opt/sf/stockfish \
+ && echo quit | /opt/sf/stockfish
 
 FROM node:22-bookworm-slim
 WORKDIR /app
