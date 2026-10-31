@@ -93,3 +93,47 @@ test('SQLite migration preserves existing games without clock or name', () => {
   db.close();
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test('AI color can be chosen at start and changed on rematch without rewriting active games', async () => {
+  const db = openDb('', ':memory:');
+  let time = 5_000_000;
+  const engine = new ScriptedEngine();
+  const games = new GameService(db, engine, 10, 'b', () => time);
+  const sid = games.ensureSession(undefined);
+
+  // AI Black means the human moves first, and the seven-minute clock starts immediately.
+  const first = games.newGame(sid, 'Сергей', 'b');
+  assert.equal(first.playerColor, 'w');
+  assert.equal(first.turn, 'player');
+  assert.equal(first.moves.length, 0);
+  assert.equal(first.playerTurnStartedAtMs, time);
+  assert.equal(first.playerRemainingMs, GUEST_TIME_MS);
+  time += 2000;
+  const played = await games.playerMove(sid, first.id, mv('e2e4'), 0);
+  assert.equal(played.moves.length, 2);
+  assert.equal(played.moves[0].by, 'player');
+  assert.equal(played.moves[1].by, 'ai');
+  assert.equal(played.playerRemainingMs, GUEST_TIME_MS - 2000);
+
+  // Side cannot be altered for an already active game.
+  const stillFirst = games.newGame(sid, 'Другое имя', 'w');
+  assert.equal(stillFirst.id, first.id);
+  assert.equal(stillFirst.playerColor, 'w');
+  assert.equal(stillFirst.playerName, 'Сергей');
+
+  games.resign(sid, first.id);
+  const second = games.newGame(sid, 'Сергей', 'w');
+  assert.equal(second.playerColor, 'b');
+  assert.equal(second.turn, 'ai');
+  assert.equal(second.moves.length, 0);
+  assert.equal(second.playerTurnStartedAtMs, null);
+  assert.equal(second.playerRemainingMs, GUEST_TIME_MS);
+  await games.idle();
+  const afterAi = games.get(sid, second.id);
+  assert.equal(afterAi.moves.length, 1);
+  assert.equal(afterAi.moves[0].by, 'ai');
+  assert.equal(afterAi.turn, 'player');
+  assert.equal(afterAi.playerTurnStartedAtMs, time);
+  assert.equal(games.current(sid)?.playerColor, 'b');
+  db.close();
+});
