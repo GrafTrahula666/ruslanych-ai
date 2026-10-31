@@ -34,7 +34,7 @@ export const api = {
   stats: () => call<StatsView>('GET', '/api/stats'),
   current: () => call<{ game: GameView | null }>('GET', '/api/game'),
   game: (id: number) => call<{ game: GameView }>('GET', `/api/game/${id}`),
-  newGame: (name: string) => call<{ game: GameView }>('POST', '/api/game', { name }),
+  newGame: (name: string, aiColor: 'w' | 'b') => call<{ game: GameView }>('POST', '/api/game', { name, aiColor }),
   move: (id: number, move: MoveInput, ply: number) =>
     call<{ game: GameView }>('POST', `/api/game/${id}/move`, { ...move, ply }),
   resign: (id: number) => call<{ game: GameView }>('POST', `/api/game/${id}/resign`),

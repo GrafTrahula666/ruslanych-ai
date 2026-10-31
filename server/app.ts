@@ -69,7 +69,11 @@ export function createApp({ games, ruslanychStats, engineStatus, staticDir }: Ap
     const sid = session(req, res);
     const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
     if (name.length < 1 || name.length > 32) throw new GameError(400, 'bad_name', 'Введите имя (не более 32 символов)');
-    res.json({ game: games.newGame(sid, name) });
+    const aiColor = req.body?.aiColor;
+    if (aiColor !== 'w' && aiColor !== 'b') {
+      throw new GameError(400, 'bad_color', 'Выберите цвет Русланыч AI');
+    }
+    res.json({ game: games.newGame(sid, name, aiColor) });
   });
 
   api.post('/game/:id/move', async (req, res) => {
