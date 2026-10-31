@@ -67,7 +67,9 @@ export function createApp({ games, ruslanychStats, engineStatus, staticDir }: Ap
   // New game / rematch. Returns the existing game if one is still unfinished.
   api.post('/game', (req, res) => {
     const sid = session(req, res);
-    res.json({ game: games.newGame(sid) });
+    const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+    if (name.length < 1 || name.length > 32) throw new GameError(400, 'bad_name', 'Введите имя (не более 32 символов)');
+    res.json({ game: games.newGame(sid, name) });
   });
 
   api.post('/game/:id/move', async (req, res) => {
