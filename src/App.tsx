@@ -41,6 +41,7 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [guestName, setGuestName] = useState('');
+  const [aiColor, setAiColor] = useState<'w' | 'b'>('w');
   const [clockTick, setClockTick] = useState(Date.now());
   const gameRef = useRef<GameView | null>(null);
   gameRef.current = game;
@@ -54,6 +55,7 @@ export function App() {
       const prev = gameRef.current;
       setGame(g);
       if (g?.playerName && g.playerName !== 'Гость') setGuestName(g.playerName);
+      if (g) setAiColor(g.playerColor === 'w' ? 'b' : 'w');
       setClockTick(Date.now());
       setPending(null);
       setOffline(false);
@@ -208,7 +210,7 @@ export function App() {
     setBusy(true);
     setError('');
     try {
-      applyGame((await api.newGame(guestName.trim())).game);
+      applyGame((await api.newGame(guestName.trim(), aiColor)).game);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Нет связи с сервером');
     } finally {
@@ -308,10 +310,25 @@ export function App() {
       </section>
 
       {game?.status !== 'active' && (
-        <label className="guest-name">Ваше имя
-          <input type="text" autoComplete="nickname" maxLength={32} value={guestName}
-            onChange={(e) => setGuestName(e.target.value)} placeholder="Введите имя перед игрой" />
-        </label>
+        <div className="start-options">
+          <label className="guest-name">Ваше имя
+            <input type="text" autoComplete="nickname" maxLength={32} value={guestName}
+              onChange={(e) => setGuestName(e.target.value)} placeholder="Введите имя перед игрой" />
+          </label>
+          <fieldset className="side-choice" disabled={busy}>
+            <legend>Какими фигурами играет Русланыч AI?</legend>
+            <label>
+              <input type="radio" name="aiColor" value="w" checked={aiColor === 'w'}
+                onChange={() => setAiColor('w')} />
+              Белыми (ИИ ходит первым)
+            </label>
+            <label>
+              <input type="radio" name="aiColor" value="b" checked={aiColor === 'b'}
+                onChange={() => setAiColor('b')} />
+              Чёрными (вы ходите первым)
+            </label>
+          </fieldset>
+        </div>
       )}
       <section className="actions">
         {game?.status === 'active' ? (
