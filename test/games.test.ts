@@ -184,7 +184,7 @@ test('engine failure keeps the game; the AI move is resumed after a server resta
   const db1 = openDb(dir, 'db.sqlite');
   const broken = new ScriptedEngine();
   broken.fail = true;
-  const s1 = new GameService(db1, broken, 10);
+  const s1 = new GameService(db1, broken, 10, 'w');
   const sid = s1.ensureSession(undefined);
   const g = s1.newGame(sid);
   const v = await s1.playerMove(sid, g.id, mv('e2e4'), 0);
@@ -196,7 +196,7 @@ test('engine failure keeps the game; the AI move is resumed after a server resta
 
   // "restart": new process state, same database file
   const db2 = openDb(dir, 'db.sqlite');
-  const s2 = new GameService(db2, new ScriptedEngine(), 10);
+  const s2 = new GameService(db2, new ScriptedEngine(), 10, 'w');
   s2.resumePending();
   await s2.idle();
   const after = s2.current(sid)!;
