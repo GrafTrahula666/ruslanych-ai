@@ -36,7 +36,9 @@ test('full game flow over HTTP with cookie sessions', async () => {
     const b = client(s.url);
     assert.equal((await a('GET', '/api/game')).body.game, null);
     assert.equal((await a('POST', '/api/game')).status, 400); // name required
-    const g = (await a('POST', '/api/game', { name: 'Тестовый игрок' })).body.game;
+    assert.equal((await a('POST', '/api/game', { name: 'Тестовый игрок' })).status, 400); // color required
+    assert.equal((await a('POST', '/api/game', { name: 'Тестовый игрок', aiColor: 'red' })).status, 400);
+    const g = (await a('POST', '/api/game', { name: 'Тестовый игрок', aiColor: 'b' })).body.game;
     assert.equal(g.moves.length, 0);
 
     // client cannot set the result, position or color: extra fields are ignored
@@ -73,7 +75,7 @@ test('full game flow over HTTP with cookie sessions', async () => {
     assert.deepEqual(st.players, { total: 1, playerWins: 0, aiWins: 1, draws: 0, aiWinPercent: 100 });
     assert.deepEqual(st.ruslanych, BASE);
 
-    const g2 = (await a('POST', '/api/game', { name: 'Тестовый игрок' })).body.game;
+    const g2 = (await a('POST', '/api/game', { name: 'Тестовый игрок', aiColor: 'b' })).body.game;
     assert.notEqual(g2.id, g.id);
   } finally {
     s.close();
