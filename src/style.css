@@ -29,4 +29,7 @@ button {
 }
 button:disabled { opacity: 0.5; }
 .history ol { columns: 3; font-size: 13px; padding-left: 28px; }
+.guest-name { display: grid; gap: .4rem; max-width: 340px; margin: 1rem auto; }
+.guest-name input { box-sizing: border-box; width: 100%; padding: .7rem; font: inherit; }
+.clock strong { font-variant-numeric: tabular-nums; font-size: 1.3rem; }
 @media (max-width: 380px) { .stats { grid-template-columns: 1fr; } }
