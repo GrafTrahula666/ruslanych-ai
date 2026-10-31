@@ -175,22 +175,24 @@ export class GameService {
   // ---------- writes ----------
 
   /** Starts a new game. An unfinished game must be finished (or resigned) first. */
-  newGame(sessionId: string, playerName = 'Гость'): GameView {
+  newGame(sessionId: string, playerName = 'Гость', aiColor?: 'w' | 'b'): GameView {
     const active = this.db
       .prepare("SELECT * FROM games WHERE session_id = ? AND status = 'active'")
       .get(sessionId) as GameRow | undefined;
     if (active) return this.view(active);
     const name = playerName.trim();
     if (name.length < 1 || name.length > 32) throw new GameError(400, 'bad_name', 'Введите имя до 32 символов');
+    // Choose the AI side per new game. Existing games retain their persisted player_color.
+    const chosenPlayerColor = aiColor === undefined ? this.playerColor : aiColor === 'w' ? 'b' : 'w';
     const t = now();
-    const clockStarted = this.playerColor === 'w' ? this.nowMs() : null;
+    const clockStarted = chosenPlayerColor === 'w' ? this.nowMs() : null;
     const r = this.db
       .prepare(
         "INSERT INTO games (session_id, player_color, player_name, player_remaining_ms, player_turn_started_at_ms, fen, moves, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, '[]', 'active', ?, ?)",
       )
-      .run(sessionId, this.playerColor, name, GUEST_TIME_MS, clockStarted, new Chess().fen(), t, t);
+      .run(sessionId, chosenPlayerColor, name, GUEST_TIME_MS, clockStarted, new Chess().fen(), t, t);
     const fresh = this.row(Number(r.lastInsertRowid))!;
-    this.kickAi(fresh); // AI plays white and opens the game
+    this.kickAi(fresh); // AI opens only when it has White.
     return this.view(fresh);
   }
 
