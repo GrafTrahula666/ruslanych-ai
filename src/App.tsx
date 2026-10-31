@@ -258,7 +258,7 @@ export function App() {
               <li>Побед игроков: {stats.players.playerWins}</li>
               <li>Побед Русланыч AI: {stats.players.aiWins}</li>
               <li>Ничьих: {stats.players.draws}</li>
-              <li>Процент побед ИИ: {stats.players.aiWinPercent}%</li>
+              <li>Процент побед Кирилла: {stats.players.aiWinPercent}%</li>
             </ul>
           )}
         </div>
