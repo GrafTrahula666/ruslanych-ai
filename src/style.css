@@ -33,3 +33,10 @@ button:disabled { opacity: 0.5; }
 .guest-name input { box-sizing: border-box; width: 100%; padding: .7rem; font: inherit; }
 .clock strong { font-variant-numeric: tabular-nums; font-size: 1.3rem; }
 @media (max-width: 380px) { .stats { grid-template-columns: 1fr; } }
+
+.start-options { max-width: 340px; margin: 1rem auto; }
+.start-options .guest-name { margin: 0 0 .75rem; }
+.side-choice { border: 1px solid #444; border-radius: 8px; padding: .75rem; margin: 0 0 1rem; }
+.side-choice legend { font-weight: 600; font-size: 14px; padding: 0 4px; }
+.side-choice label { display: flex; align-items: center; gap: 10px; padding: .45rem 0; cursor: pointer; }
+.side-choice input { width: 18px; height: 18px; accent-color: #d7af79; }
