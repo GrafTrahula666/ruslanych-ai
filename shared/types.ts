@@ -6,7 +6,8 @@ export type EndReason =
   | 'threefold'
   | 'fifty-moves'
   | 'insufficient-material'
-  | 'resign';
+  | 'resign'
+  | 'timeout';
 
 export interface MoveRecord {
   ply: number;
@@ -19,6 +20,9 @@ export interface MoveRecord {
 export interface GameView {
   id: number;
   playerColor: Color;
+  playerName: string;
+  playerRemainingMs: number | null;
+  playerTurnStartedAtMs: number | null;
   fen: string;
   moves: MoveRecord[];
   status: 'active' | 'finished';
